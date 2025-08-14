@@ -14,16 +14,26 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QSplitter,
     QFrame,
+    QSizePolicy,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+
+# Thêm QSize nếu chưa có
+from PyQt6.QtGui import QFont, QIcon, QPixmap
 from PyQt6.QtCore import QUrl, Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QFont, QIcon
 import logging
+from const import DOWNLOAD_AI_SERVICE_PACKAGE
 
 # Import backend manager
 from backend_manager import backend_manager
 
 logger = logging.getLogger(__name__)
+
+# Xác định đường dẫn tới thư mục icons
+# Giả định thư mục icons nằm cùng cấp với ui/main_window.py
+# Nếu khác, hãy điều chỉnh đường dẫn tương ứng
+CURRENT_DIR = Path(__file__).parent.resolve()
+ICONS_DIR = CURRENT_DIR.parent / "icons"  # Điều hướng lên một cấp từ ui/
 
 
 class BackendSetupWorker(QThread):
@@ -33,8 +43,11 @@ class BackendSetupWorker(QThread):
     status = pyqtSignal(str)  # status message
     finished = pyqtSignal(bool, str)  # success, message
 
-    def __init__(self, download_url):
+    def __init__(self):
         super().__init__()
+
+        # TODO: Thay bằng URL thật
+        download_url = DOWNLOAD_AI_SERVICE_PACKAGE
         self.download_url = download_url
 
     def run(self):
@@ -92,10 +105,13 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("AI Video Dubbing")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1200, 1000)
 
         # Central widget
         central_widget = QWidget()
+        central_widget.setMinimumWidth(1200)
+        central_widget.setMinimumHeight(1000)
+
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,45 +150,94 @@ class MainWindow(QMainWindow):
         # Create splitter for 2-column layout
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(10)  # Width of the divider
+        splitter.setChildrenCollapsible(
+            False
+        )  # Ngăn không cho các panel collapse hoàn toàn
 
         # Left column (menu panel)
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(5, 10, 5, 10)  # Giảm margin trái/phải
+        left_layout.setSpacing(15)  # Tăng spacing giữa các phần tử
+        left_panel.setFixedWidth(150)  # Tăng width một chút để đủ chỗ cho icon + text
 
-        # Logo/Title
-        self.logo_label = QLabel("AI Video Dubbing")
+        # --- Logo ---
+        self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.logo_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        # Load logo pixmap
+        logo_path = ICONS_DIR / "logo.svg"
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            # Scale pixmap, giữ aspect ratio
+            scaled_pixmap = pixmap.scaled(
+                QSize(80, 80),  # Kích thước mong muốn
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.logo_label.setPixmap(scaled_pixmap)
+        else:
+            # Fallback nếu không tìm thấy logo.png
+            self.logo_label.setText("AI Dub")
+            self.logo_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        # Đặt size policy để label không chiếm không gian dư thừa
+        self.logo_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
+        self.logo_label.setMinimumHeight(90)  # Đảm bảo có không gian cho logo
+
         left_layout.addWidget(self.logo_label)
 
         # Menu buttons
         self.menu_layout = QVBoxLayout()
-        self.menu_layout.setSpacing(5)
+        self.menu_layout.setSpacing(8)  # Khoảng cách giữa các menu buttons
+        self.menu_layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop
+        )  # Căn các buttons lên trên
 
-        # Create menu buttons with icons (if available) or text-only buttons
-        self.home_button = QPushButton("Trang chủ")
-        self.home_button.clicked.connect(
-            lambda: self.load_url("https://www.youtube.com")
+        # --- Hàm helper để tạo menu button ---
+        def create_menu_button(icon_name: str, text: str, url: str = None):
+            """Tạo một menu button với icon và text"""
+            button = QPushButton(text)
+            button.setIconSize(QSize(24, 24))  # Kích thước icon
+
+            # Load icon
+            icon_path = ICONS_DIR / f"{icon_name}.png"
+            if icon_path.exists():
+                icon = QIcon(str(icon_path))
+                button.setIcon(icon)
+            else:
+                # Nếu không có icon, có thể để trống hoặc dùng text thay thế
+                # Ở đây chúng ta vẫn giữ text và không có icon
+                pass
+
+            # Căn text sang phải, icon sang trái
+            button.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+            # Có thể điều chỉnh stylesheet nếu cần
+            # button.setStyleSheet("text-align: left; padding: 5px;")
+
+            if url:
+                button.clicked.connect(lambda _, u=url: self.load_url(u))
+            return button
+
+        # --- Tạo các menu buttons ---
+        # Trang chủ
+        self.home_button = create_menu_button(
+            "home", "Trang chủ", "https://www.youtube.com"
         )
-
-        self.youtube_button = QPushButton("YouTube")
-        self.youtube_button.clicked.connect(
-            lambda: self.load_url("https://www.youtube.com")
+        # YouTube
+        self.youtube_button = create_menu_button(
+            "youtube", "YouTube", "https://www.youtube.com"
         )
-
-        self.udemy_button = QPushButton("Udemy")
-        self.udemy_button.clicked.connect(
-            lambda: self.load_url("https://www.udemy.com")
+        # Udemy
+        self.udemy_button = create_menu_button(
+            "udemy", "Udemy", "https://www.udemy.com"
         )
-
-        self.deeplearning_button = QPushButton("DeepLearning")
-        self.deeplearning_button.clicked.connect(
-            lambda: self.load_url("https://www.deeplearning.ai")
+        # Deeplearning
+        self.deeplearning_button = create_menu_button(
+            "deeplearning", "DeepLearning", "https://www.deeplearning.ai"
         )
-
-        self.settings_button = QPushButton("Cài đặt")
+        # Cài đặt
+        self.settings_button = create_menu_button("setting", "Cài đặt")
         self.settings_button.clicked.connect(self.show_settings)
 
         # Add buttons to menu layout
@@ -181,10 +246,10 @@ class MainWindow(QMainWindow):
         self.menu_layout.addWidget(self.udemy_button)
         self.menu_layout.addWidget(self.deeplearning_button)
         self.menu_layout.addWidget(self.settings_button)
+        self.menu_layout.addStretch(1)  # Đẩy các buttons lên trên
 
         # Add menu layout to left panel
         left_layout.addLayout(self.menu_layout)
-        left_layout.addStretch(1)  # Push items to top
 
         # Right column (content area)
         right_panel = QWidget()
@@ -199,11 +264,12 @@ class MainWindow(QMainWindow):
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
 
-        # Set initial sizes (left: 20%, right: 80%)
-        splitter.setSizes([200, 1000])  # Adjust these values as needed
+        # Set initial sizes (left: 150px cố định, right: phần còn lại)
+        # Vì left_panel.setFixedWidth(150), nên kích thước này sẽ được giữ nguyên
 
         # Add splitter to main widget layout
         self.main_layout = QVBoxLayout(self.main_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)  # Bỏ margin cho main layout
         self.main_layout.addWidget(splitter)
 
     def log_message(self, message):
@@ -218,12 +284,10 @@ class MainWindow(QMainWindow):
 
     def start_backend_setup(self):
         """Bắt đầu quá trình cài đặt và khởi động backend"""
-        # TODO: Thay bằng URL thật
-        download_url = "http://127.0.0.1:17199/static/python_client_backend.zip"
 
         self.log_message("Bắt đầu cài đặt backend...")
 
-        self.setup_thread = BackendSetupWorker(download_url)
+        self.setup_thread = BackendSetupWorker()
         self.setup_thread.progress.connect(self.update_progress)
         self.setup_thread.status.connect(self.update_status)
         self.setup_thread.finished.connect(self.on_setup_finished)
@@ -265,7 +329,9 @@ class MainWindow(QMainWindow):
 
     def load_url(self, url):
         """Tải URL trong web view"""
-        self.web_view.load(QUrl(url))
+        # Loại bỏ khoảng trắng thừa nếu có
+        clean_url = url.strip()
+        self.web_view.load(QUrl(clean_url))
 
     def refresh_web_view(self):
         """Làm mới web view"""
